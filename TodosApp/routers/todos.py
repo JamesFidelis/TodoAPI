@@ -21,6 +21,11 @@ models.Base.metadata.create_all(bind=engine)
 class TODO(BaseModel):
     title: str = Field(min_length=1)
     description: Optional[str] = Field(min_length=1)
+    date: str = Field(min_length=1)
+    start: str = Field(min_length=1)
+    end: str = Field(min_length=1)
+    repeat: int = Field(gt=0,lt=61)
+    remind: str = Field(min_length=1)
     priority: int = Field(gt=0, lt=11, description="The value ranges from 1-10")
     complete: bool
 
@@ -61,6 +66,11 @@ async def create_todo(todo: TODO,
     todo_model = models.Todos()
     todo_model.title = todo.title
     todo_model.description = todo.description
+    todo_model.date = todo.date
+    todo_model.start = todo.start
+    todo_model.end = todo.end
+    todo_model.remind = todo.remind
+    todo_model.repeat = todo.repeat
     todo_model.priority = todo.priority
     todo_model.complete = todo.complete
     todo_model.owner_id = user.get("user_id")
