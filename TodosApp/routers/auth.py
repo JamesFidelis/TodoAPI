@@ -1,11 +1,15 @@
 import uvicorn
-from fastapi import FastAPI, Depends, HTTPException, status
+import sys
+
+sys.path.append("..")
+
+from fastapi import Depends, HTTPException, status, APIRouter
 from pydantic import BaseModel
 from typing import Optional
 import models
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
-from database import SessionLocal, engine
+from TodosApp.database import SessionLocal, engine
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError
 from datetime import timedelta, datetime
@@ -22,9 +26,20 @@ class CreateUser(BaseModel):
     password: str
 
 
+class Login(BaseModel):
+    username: str
+    password: str
+
+
 bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 models.Base.metadata.create_all(bind=engine)
 oauth2_bearer = OAuth2PasswordBearer(tokenUrl="token")
+
+router = APIRouter(
+    prefix="/user",
+    tags=["user"],
+    responses={404: {"user": "Not authorized"}}
+)
 
 
 def get_db():
@@ -60,14 +75,11 @@ def create_user_token(username: str, user_id: int, expires_delta: Optional[int])
     return jwt.encode(encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-app = FastAPI()
-
-
 def get_hashed_password(password):
     return bcrypt_context.hash(password)
 
 
-@app.post("/user/create")
+@router.post("/create")
 async def create_user(register: CreateUser, db: Session = Depends(get_db)):
     register_model = models.Users()
     register_model.email = register.email
@@ -82,25 +94,34 @@ async def create_user(register: CreateUser, db: Session = Depends(get_db)):
     db.commit()
 
     return {
-        "status":status_response(201),
+        "status": status_response(201),
         "username": register.username,
         "first_name": register.first_name,
         "last_name": register.last_name
     }
 
 
-@app.post("/users/token")
-async def get_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = authenticate_user(form_data.username, form_data.password, db)
+@router.post("/token")
+async def get_token(
+        login: Login,
+        db: Session = Depends(get_db)):
+    user = authenticate_user(login.username, login.password, db)
     if not user:
         raise token_exception()
     token_expires = timedelta(minutes=20)
     token = create_user_token(user.username, user.id, expires_delta=token_expires)
+    user_data = db.query(models.Users).filter(models.Users.id == user.id).first()
 
-    return {"token": token}
+    return {"token": token,
+            "data": {
+                "full_name": user_data.first_name + ' ' + user_data.last_name,
+                "email": user_data.email
+            }
+
+            }
 
 
-@app.get("/users/user")
+@router.get("/current")
 async def get_current_user(token: str = Depends(oauth2_bearer)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -138,6 +159,5 @@ def token_exception():
         headers={"WWW-Authenticate": "Bearer"}
     )
     return token_fail
-
 
 # uvicorn.run(app, port=8000)
